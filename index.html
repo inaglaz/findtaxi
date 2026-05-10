@@ -39,40 +39,63 @@
     color:#1f2937;
     -webkit-tap-highlight-color: transparent;
   }
-  h1,h2,h3,h4,h5,h6,.brand-text,.navbar-brand{
+  h1,h2,h3,h4,h5,h6,.brand-text{
     font-family:'Poppins', sans-serif;
     font-weight:700;
-  }
-  .navbar-brand{padding-top:.25rem;padding-bottom:.25rem;}
-  .navbar-brand-item{height:56px;width:auto;display:block;}
-  @media (max-width: 575.98px){
-    .navbar-brand-item{height:48px;}
-  }
-  .brand-mark{
-    width:42px;height:42px;border-radius:50%;
-    background: linear-gradient(135deg,#243D5D,#3a5a82);
-    color:#fff;display:inline-flex;align-items:center;justify-content:center;
-    font-weight:700; box-shadow:0 6px 16px rgba(36,61,93,.25);
-  }
-  .navbar{
-    background:#fff;
-    box-shadow:0 1px 0 rgba(0,0,0,.04), 0 6px 16px rgba(15,23,42,.04);
   }
 
   .bg-terciary{background-color: var(--color-terciary)!important; color:#fff!important;}
   .text-terciary{color: var(--color-terciary)!important;}
 
+  /* MONTH SUMMARY HERO */
   .summary-card{
-    border:0; border-radius:18px;
-    background: linear-gradient(135deg, #243D5D 0%, #34547d 100%);
+    position:relative;overflow:hidden;
+    border:0; border-radius:20px;
+    background:
+      radial-gradient(120% 140% at 100% 0%, rgba(20,184,166,.35) 0%, rgba(20,184,166,0) 55%),
+      radial-gradient(80% 120% at 0% 100%, rgba(255,255,255,.12) 0%, rgba(255,255,255,0) 60%),
+      linear-gradient(135deg, #1a2e47 0%, #243D5D 45%, #34547d 100%);
     color:#fff;
-    box-shadow:0 10px 30px rgba(36,61,93,.28);
+    box-shadow:0 14px 36px rgba(36,61,93,.32);
     cursor:pointer;
-    transition: transform .15s ease, box-shadow .15s ease;
+    transition: transform .18s ease, box-shadow .18s ease;
   }
-  .summary-card:hover{transform: translateY(-1px);}
-  .summary-card .summary-amount{font-size:2rem;font-weight:700;letter-spacing:-.02em;}
-  .summary-card .summary-label{opacity:.9;font-size:.9rem;}
+  .summary-card::before{
+    content:""; position:absolute; right:-40px; top:-40px;
+    width:160px; height:160px; border-radius:50%;
+    background: radial-gradient(circle, rgba(255,255,255,.10) 0%, rgba(255,255,255,0) 70%);
+    pointer-events:none;
+  }
+  .summary-card:hover{transform: translateY(-1px); box-shadow:0 16px 40px rgba(36,61,93,.36);}
+  .summary-card .hero-row{
+    display:flex;align-items:center;gap:.7rem;flex-wrap:nowrap;
+  }
+  .summary-card .hero-icon{
+    width:38px;height:38px;border-radius:12px;flex:0 0 38px;
+    background: rgba(255,255,255,.14);
+    display:inline-flex;align-items:center;justify-content:center;
+    backdrop-filter: blur(6px);
+    font-size:1.1rem;
+  }
+  .summary-card .hero-text{
+    font-family:'Poppins',sans-serif;font-weight:700;
+    font-size:1.15rem;letter-spacing:-.01em;line-height:1.1;
+    flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .summary-card .hero-text .hero-month{opacity:.8;font-weight:500;text-transform:uppercase;letter-spacing:.06em;font-size:.78rem;display:block;margin-bottom:.1rem;}
+  .summary-card .hero-text .hero-amount{color:#fff;}
+  .summary-card .hero-text .hero-amount .accent{color:#5eead4;}
+  .summary-card .chev{
+    width:32px;height:32px;border-radius:50%;
+    background:rgba(255,255,255,.12);
+    display:inline-flex;align-items:center;justify-content:center;
+    transition:transform .2s ease;flex:0 0 32px;
+  }
+  .summary-card[aria-expanded="true"] .chev{transform:rotate(180deg);}
+  @media (max-width: 380px){
+    .summary-card .hero-text{font-size:1.02rem;}
+    .summary-card .hero-icon{width:34px;height:34px;flex-basis:34px;}
+  }
 
   .day-nav{
     background:#fff; border-radius:16px;
@@ -131,18 +154,33 @@
 
   .footer-actions .btn{border-radius:12px;font-weight:600;}
   .btn-primary{font-weight:600;}
+  .btn-icon{
+    width:42px;height:42px;border-radius:50%;flex:0 0 42px;
+    display:inline-flex;align-items:center;justify-content:center;
+    border:1px solid #e5e7eb;background:#fff;color:#243D5D;
+    transition: background .15s ease;
+  }
+  .btn-icon:hover{background:#eaeef5;}
+  .btn-add{flex:0 0 auto;}
 
   .day-total-pill{
-    display:inline-flex;align-items:center;gap:.6rem;
+    display:inline-flex;align-items:center;gap:.45rem;
     background:#fff;border:1px solid #e5e7eb;border-radius:999px;
-    padding:.45rem .9rem;
+    padding:.4rem .8rem;
     box-shadow:0 4px 14px rgba(15,23,42,.05);
+    flex:0 0 auto;
   }
   .day-total-pill .day-total-label{
-    font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;font-weight:600;
+    font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;font-weight:600;
   }
   .day-total-pill .day-total-amount{
-    font-family:'Poppins',sans-serif;font-weight:700;color: var(--color-terciary);font-size:1.1rem;
+    font-family:'Poppins',sans-serif;font-weight:700;color: var(--color-terciary);font-size:1.05rem;
+  }
+  @media (max-width: 380px){
+    .btn-add{padding:.45rem .7rem;font-size:.92rem;}
+    .day-total-pill{padding:.35rem .65rem;}
+    .day-total-pill .day-total-label{font-size:.66rem;}
+    .day-total-pill .day-total-amount{font-size:.95rem;}
   }
 
   @media (max-width: 575.98px){
@@ -160,34 +198,18 @@
 </head>
 <body>
 
-<!-- NAVBAR -->
-<nav class="navbar navbar-expand-lg sticky-top">
-  <div class="container">
-    <a class="navbar-brand d-flex align-items-center" href="#">
-      <img src="Logo-findtaxi.png" alt="FindTaxi" class="navbar-brand-item">
-    </a>
-    <div class="ms-auto d-flex align-items-center gap-2">
-      <span id="todayBadge" class="badge bg-light text-dark border d-none d-sm-inline"></span>
-      <img src="https://api.dicebear.com/7.x/initials/svg?seed=FT&backgroundColor=243D5D"
-           class="rounded-circle shadow" width="38" height="38" alt="avatar">
-    </div>
-  </div>
-</nav>
+<main class="container py-3" style="max-width:900px;">
 
-<main class="container py-3 py-md-4" style="max-width:900px;">
-
-  <!-- MONTH SUMMARY TAB -->
-  <div class="summary-card p-3 p-md-4 mb-3" id="monthSummaryCard" role="button"
+  <!-- MONTH SUMMARY HERO -->
+  <div class="summary-card px-3 py-3 mb-3" id="monthSummaryCard" role="button"
        data-bs-toggle="collapse" data-bs-target="#monthBreakdown" aria-expanded="false">
-    <div class="d-flex align-items-center justify-content-between">
-      <div>
-        <div class="summary-label">Total € de comisiones del mes en curso</div>
-        <div class="summary-amount"><span id="monthTotal">0</span>€</div>
-        <div class="summary-label mt-1" id="monthLabel"></div>
+    <div class="hero-row">
+      <span class="hero-icon"><i class="bi bi-coin"></i></span>
+      <div class="hero-text">
+        <span class="hero-month">Total mes</span>
+        <span class="hero-amount"><span id="monthName">—</span> · <span class="accent"><span id="monthTotal">0</span>€</span></span>
       </div>
-      <div class="text-end">
-        <i class="bi bi-chevron-down fs-4"></i>
-      </div>
+      <span class="chev"><i class="bi bi-chevron-down"></i></span>
     </div>
   </div>
 
@@ -238,15 +260,15 @@
     </div>
   </div>
 
-  <div class="footer-actions d-flex flex-wrap align-items-center gap-2 mb-4">
-    <button class="btn btn-primary" id="addRowBtn">
-      <i class="bi bi-plus-lg"></i> Añadir más
+  <div class="footer-actions d-flex align-items-center flex-nowrap gap-2 mb-4">
+    <button class="btn btn-primary btn-add" id="addRowBtn">
+      <i class="bi bi-plus-lg"></i> <span class="d-none d-sm-inline">Añadir más</span><span class="d-inline d-sm-none">Añadir</span>
     </button>
-    <button class="btn btn-outline-secondary" id="todayBtn">
-      <i class="bi bi-calendar-day"></i> Hoy
+    <button class="btn-icon" id="todayBtn" aria-label="Ir a hoy" title="Ir a hoy">
+      <i class="bi bi-calendar-day"></i>
     </button>
     <div class="ms-auto day-total-pill">
-      <span class="day-total-label">Total del día</span>
+      <span class="day-total-label">Total día</span>
       <span class="day-total-amount"><span id="dayTotalAmount">0</span>€</span>
     </div>
   </div>
@@ -277,7 +299,21 @@
 <script>
 /* ====================== CONFIG ====================== */
 const COMMISSIONABLE_HOTELS = [
-  "room","halo","giralda","cetina","indias","murillo","sangil","viapol","only"
+  "puerta palacios",
+  "room salvador",
+  "gotoseville",
+  "buhaira",
+  "cetina",
+  "cool",
+  "cse",
+  "giralda",
+  "halo",
+  "indias",
+  "kube",
+  "leto",
+  "only",
+  "room",
+  "viapol"
 ];
 const COMMISSION_PER_SERVICE = 6;
 const STORAGE_KEY = "taxifind_comisiones_v1";
@@ -342,7 +378,10 @@ function matchedHotelKey(name){
 }
 function ensureDay(iso){
   if(!state.days[iso]) state.days[iso] = { rows: emptyRows(INITIAL_ROWS) };
-  if(!state.days[iso].rows) state.days[iso].rows = emptyRows(INITIAL_ROWS);
+  if(!Array.isArray(state.days[iso].rows)) state.days[iso].rows = [];
+  while(state.days[iso].rows.length < INITIAL_ROWS){
+    state.days[iso].rows.push({hora:"",hotel:"",habitacion:"",taxista:""});
+  }
   return state.days[iso];
 }
 function emptyRows(n){
@@ -458,7 +497,7 @@ function renderMonthSummary(){
   const mk = monthKey(currentDate);
   const { breakdown, total } = computeMonthBreakdown(mk);
   $("#monthTotal").textContent = total;
-  $("#monthLabel").textContent = monthLabel(mk);
+  $("#monthName").textContent = MONTH_NAMES[parseInt(mk.split('-')[1],10)-1].toUpperCase();
 
   const list = $("#breakdownList");
   const keys = Object.keys(breakdown).sort((a,b)=> breakdown[b].total - breakdown[a].total);
