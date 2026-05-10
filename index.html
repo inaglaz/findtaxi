@@ -597,6 +597,11 @@ function pickActiveHint(input){
   return true;
 }
 
+/* ====================== EARLY RENDER ====================== */
+// Render rows immediately so the user sees the table even if any later code
+// (event listeners, bootstrap CDN, etc.) throws.
+try{ ensureDay(currentDate); render(); }catch(e){ console.error('Early render error:', e); }
+
 /* ====================== EVENTS ====================== */
 servicesBody.addEventListener('input', e=>{
   const t = e.target;
@@ -749,7 +754,13 @@ $("#addRowBtn").addEventListener('click', ()=>{
 });
 
 /* Previous month */
-const prevMonthModal = new bootstrap.Modal($("#prevMonthModal"));
+let _prevMonthModal = null;
+function getPrevMonthModal(){
+  if(_prevMonthModal) return _prevMonthModal;
+  if(typeof bootstrap === 'undefined' || !bootstrap.Modal) return null;
+  _prevMonthModal = new bootstrap.Modal($("#prevMonthModal"));
+  return _prevMonthModal;
+}
 $("#prevMonthBtn").addEventListener('click', ()=>{
   const pmk = $("#prevMonthBtn").dataset.month;
   if(!pmk) return;
@@ -801,7 +812,9 @@ function showPrevMonth(mk){
 
   $("#prevMonthBody").innerHTML = html;
   $("#deletePrevMonthBtn").dataset.month = mk;
-  prevMonthModal.show();
+  const m = getPrevMonthModal();
+  if(m) m.show();
+  else $("#prevMonthModal").style.display = "block"; // fallback minimal
 }
 
 $("#deletePrevMonthBtn").addEventListener('click', ()=>{
@@ -812,7 +825,8 @@ $("#deletePrevMonthBtn").addEventListener('click', ()=>{
     if(monthKey(iso) === mk) delete state.days[iso];
   });
   saveState();
-  prevMonthModal.hide();
+  const m = getPrevMonthModal();
+  if(m) m.hide();
   render();
 });
 
@@ -838,9 +852,27 @@ function scheduleMidnightRefresh(){
 }
 
 /* INIT */
-ensureDay(currentDate);
-render();
-scheduleMidnightRefresh();
+try{
+  ensureDay(currentDate);
+  render();
+  scheduleMidnightRefresh();
+}catch(err){
+  console.error('Init error:', err);
+  // último recurso: pintar al menos las 5 filas vacías
+  try{
+    const sb = document.getElementById('servicesBody');
+    if(sb && !sb.children.length){
+      sb.innerHTML = Array.from({length:5},(_,i)=>`
+        <tr>
+          <td><input class="form-control-cell text-center" placeholder="--:--"></td>
+          <td><input class="form-control-cell" placeholder="Hotel"></td>
+          <td><input class="form-control-cell" placeholder="Hab."></td>
+          <td><input class="form-control-cell" placeholder="Taxista"></td>
+          <td></td>
+        </tr>`).join('');
+    }
+  }catch(_){}
+}
 </script>
 </body>
 </html>
