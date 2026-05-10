@@ -11,3 +11,9 @@ CREATE TABLE IF NOT EXISTS services (
 );
 
 CREATE INDEX IF NOT EXISTS idx_services_date ON services(date);
+
+CREATE TABLE IF NOT EXISTS service_days (
+  date TEXT PRIMARY KEY,
+  raw_text TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
