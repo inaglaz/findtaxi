@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "findtaxi",
+  "compatibility_date": "2026-05-10",
+  "observability": { "enabled": true },
+  "assets": { "directory": "." },
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "findtaxi-db",
+      "database_id": "e8eaff95-06e7-4256-baec-07d4d25ed1c9"
+    }
+  ]
+}
