@@ -436,7 +436,6 @@ const servicesBody = $("#servicesBody");
 function render(){
   const day = ensureDay(currentDate);
   $("#dayTitle").textContent = formatDayTitle(currentDate);
-  $("#todayBadge").textContent = formatDayTitle(isoDate(new Date()));
 
   // rows
   servicesBody.innerHTML = "";
