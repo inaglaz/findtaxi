@@ -150,7 +150,12 @@
     padding:.55rem .75rem;
     border-left:4px solid transparent;
     border-bottom:1px solid #f1f5f9;
+    cursor:pointer;
+    transition: filter .15s ease;
+    -webkit-tap-highlight-color: rgba(36,61,93,.08);
   }
+  .parsed-line:hover{filter:brightness(.97);}
+  .parsed-line:active{filter:brightness(.94);}
   .parsed-line:last-child{border-bottom:0;}
   .parsed-line.line-comm{
     background:rgba(20,184,166,.08);
@@ -237,6 +242,23 @@
     .day-total-pill .day-total-amount{font-size:.95rem;}
     .parsed-time{flex-basis:46px;font-size:.88rem;}
     .parsed-hotel{font-size:.92rem;}
+  }
+
+  /* TEXTAREA LINE HIGHLIGHT (when user taps a parsed line) */
+  .line-highlight{
+    position:absolute;pointer-events:none;
+    border-radius:4px;z-index:5;
+    animation: lineFlash 1.8s ease-out forwards;
+  }
+  .line-highlight.lh-comm    { background: rgba(20,184,166,.42); }
+  .line-highlight.lh-known   { background: rgba(148,163,184,.40); }
+  .line-highlight.lh-unknown { background: rgba(148,163,184,.40); }
+  .line-highlight.lh-owner   { background: rgba(249,115,22,.42); }
+  @keyframes lineFlash{
+    0%   { opacity:0; }
+    10%  { opacity:1; }
+    70%  { opacity:1; }
+    100% { opacity:0; }
   }
 
   /* AUTOCOMPLETE POPUP */
@@ -732,9 +754,10 @@ function parseDay(rawText){
   let total = 0;
   const breakdown = {};
   let commCount = 0;
-  for(const line of lines){
-    const p = parseLine(line);
+  for(let i = 0; i < lines.length; i++){
+    const p = parseLine(lines[i]);
     if(!p) continue;
+    p.lineIndex = i;
     parsed.push(p);
     if(p.commissionable && p.hotel){
       const n = p.multiplier || 1;
@@ -782,10 +805,11 @@ function renderParsed(){
 }
 
 function renderLine(p){
+  const lineIdx = (typeof p.lineIndex === 'number') ? p.lineIndex : -1;
   // Note line: shown gray with the raw text as body, no hotel/habitación.
   if(p.isNote){
     return `
-      <div class="parsed-line line-known">
+      <div class="parsed-line line-known" data-line-idx="${lineIdx}" data-flash="lh-known">
         <div class="parsed-time ${p.hora ? '' : 'muted'}">${p.hora || '·'}</div>
         <div class="parsed-body">
           <div class="parsed-hotel">
@@ -811,8 +835,12 @@ function renderLine(p){
   const hotelName = p.hotel ? p.hotel.name : (p.raw.replace(/^[\s\d:'`´h.\-]+/, '').split(/\s+/).slice(0,3).join(' ') || '—');
   const meta = p.habitacion ? `Hab. <span class="room">${escapeHtml(p.habitacion)}</span>` : '';
   const com = p.comentario ? escapeHtml(p.comentario) : '';
+  const flashTag = cls === 'line-comm'    ? 'lh-comm'
+                 : cls === 'line-owner'   ? 'lh-owner'
+                 : cls === 'line-unknown' ? 'lh-unknown'
+                 : 'lh-known';
   return `
-    <div class="parsed-line ${cls}">
+    <div class="parsed-line ${cls}" data-line-idx="${lineIdx}" data-flash="${flashTag}">
       <div class="parsed-time ${p.hora ? '' : 'muted'}">${p.hora || '--:--'}</div>
       <div class="parsed-body">
         <div class="parsed-hotel">
@@ -1072,6 +1100,86 @@ dayText.addEventListener('keydown', e=>{
 dayText.addEventListener('blur', ()=>{ setTimeout(closeAcPopup, 150); });
 window.addEventListener('scroll', closeAcPopup, true);
 window.addEventListener('resize', closeAcPopup);
+
+/* Click on a parsed line → jump to that line in the textarea and flash it. */
+function flashTextareaLine(lineIdx, flashTag){
+  if(lineIdx < 0) return;
+  const value = dayText.value;
+  const lines = value.split('\n');
+  if(lineIdx >= lines.length) return;
+
+  // Place caret at the start of the target line (auto-scrolls inside textarea
+  // if needed; on auto-grow textarea this typically doesn't trigger but the
+  // caret position is useful as a visual anchor and for keyboard editing).
+  const before = lines.slice(0, lineIdx).join('\n');
+  const startPos = before.length + (lineIdx > 0 ? 1 : 0);
+  const endPos   = startPos + (lines[lineIdx] || '').length;
+
+  // Use a mirror div to find the pixel position of the line within the textarea.
+  const cs = getComputedStyle(dayText);
+  const mirror = document.createElement('div');
+  const props = [
+    'boxSizing','width','overflowX','overflowY',
+    'borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth',
+    'paddingTop','paddingRight','paddingBottom','paddingLeft',
+    'fontStyle','fontVariant','fontWeight','fontStretch','fontSize','fontSizeAdjust',
+    'lineHeight','fontFamily','textAlign','textTransform','textIndent',
+    'letterSpacing','wordSpacing','tabSize','MozTabSize'
+  ];
+  props.forEach(p => mirror.style[p] = cs[p]);
+  mirror.style.position = 'absolute';
+  mirror.style.visibility = 'hidden';
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.wordWrap = 'break-word';
+  const taRect = dayText.getBoundingClientRect();
+  mirror.style.top  = (taRect.top  + window.scrollY) + 'px';
+  mirror.style.left = (taRect.left + window.scrollX) + 'px';
+
+  mirror.textContent = before + (lineIdx > 0 ? '\n' : '');
+  const startSpan = document.createElement('span');
+  startSpan.textContent = '​';
+  mirror.appendChild(startSpan);
+  const lineSpan = document.createElement('span');
+  lineSpan.textContent = (lines[lineIdx] || ' ');
+  mirror.appendChild(lineSpan);
+
+  document.body.appendChild(mirror);
+  const startRect = startSpan.getBoundingClientRect();
+  const lineRect  = lineSpan.getBoundingClientRect();
+  mirror.remove();
+
+  const lineHeight = parseFloat(cs.lineHeight) || (parseFloat(cs.fontSize) * 1.5);
+  const padL = parseFloat(cs.paddingLeft);
+  const padR = parseFloat(cs.paddingRight);
+  const bordL = parseFloat(cs.borderLeftWidth);
+  const bordR = parseFloat(cs.borderRightWidth);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'line-highlight ' + (flashTag || 'lh-known');
+  overlay.style.top    = (startRect.top + window.scrollY) + 'px';
+  overlay.style.left   = (taRect.left + window.scrollX + bordL + padL - 2) + 'px';
+  overlay.style.width  = (taRect.width - bordL - bordR - padL - padR + 4) + 'px';
+  const height = Math.max(lineHeight, lineRect.bottom - startRect.top);
+  overlay.style.height = height + 'px';
+  document.body.appendChild(overlay);
+  setTimeout(() => overlay.remove(), 1900);
+
+  // Smooth-scroll so the targeted line sits near the top of the viewport.
+  const targetScrollY = startRect.top + window.scrollY - 90;
+  window.scrollTo({ top: Math.max(0, targetScrollY), behavior: 'smooth' });
+
+  // Focus + select the line so the keyboard cursor lands there too.
+  dayText.focus({ preventScroll: true });
+  dayText.setSelectionRange(startPos, endPos);
+}
+
+parsedList.addEventListener('click', e => {
+  const row = e.target.closest('.parsed-line');
+  if(!row) return;
+  const idx = parseInt(row.dataset.lineIdx, 10);
+  if(isNaN(idx) || idx < 0) return;
+  flashTextareaLine(idx, row.dataset.flash || 'lh-known');
+});
 
 
 /* Scroll memory per day. Resumed sessions stay where the user left them,
