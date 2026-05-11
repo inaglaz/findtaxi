@@ -325,12 +325,21 @@
     color:#6b7280;font-weight:600;margin-bottom:.35rem;
   }
   .search-input{
-    width:100%;
+    width:100%;max-width:100%;
+    box-sizing:border-box;
     border:1px solid #e5e7eb;border-radius:12px;
     padding:.7rem .9rem;
     font-family:'DM Sans', system-ui, sans-serif;
     font-size:1rem;line-height:1.4;
     outline:none;background:#fbfbfd;color:#1f2937;
+    -webkit-appearance:none;appearance:none;
+  }
+  .search-input::-webkit-date-and-time-value{text-align:left;}
+  .search-range{
+    display:flex;gap:.6rem;flex-wrap:nowrap;
+  }
+  .search-range-field{
+    flex:1 1 0;min-width:0;
   }
   .search-input:focus{border-color:#243D5D;background:#fff;box-shadow:0 0 0 3px rgba(36,61,93,.08);}
   .search-summary{
@@ -446,8 +455,16 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
         </div>
         <div class="modal-body">
-          <label class="search-field-label" for="searchDate">Día</label>
-          <input type="date" id="searchDate" class="search-input mb-3">
+          <div class="search-range mb-3">
+            <div class="search-range-field">
+              <label class="search-field-label" for="searchDateFrom">Desde</label>
+              <input type="date" id="searchDateFrom" class="search-input">
+            </div>
+            <div class="search-range-field">
+              <label class="search-field-label" for="searchDateTo">Hasta</label>
+              <input type="date" id="searchDateTo" class="search-input">
+            </div>
+          </div>
           <label class="search-field-label" for="searchInput">Palabra clave</label>
           <input type="search" id="searchInput" class="search-input"
             placeholder="Ej: negro, indias, 401…"
@@ -1388,16 +1405,20 @@ function getSearchModal(){
 }
 
 $("#searchBtn").addEventListener('click', ()=>{
-  // Reset the date picker to the day the user is currently viewing.
-  $("#searchDate").value = currentDate;
+  // Reset both date pickers to the day being viewed (single-day search by
+  // default — the taxista just adds a keyword and obtains results).
+  $("#searchDateFrom").value = currentDate;
+  $("#searchDateTo").value   = currentDate;
   const m = getSearchModal();
   if(m) m.show();
   setTimeout(()=> $("#searchInput").focus(), 220);
   runSearch();
 });
 
-$("#searchDate").addEventListener('change', runSearch);
-$("#searchDate").addEventListener('input', runSearch);
+$("#searchDateFrom").addEventListener('change', runSearch);
+$("#searchDateFrom").addEventListener('input',  runSearch);
+$("#searchDateTo").addEventListener('change',   runSearch);
+$("#searchDateTo").addEventListener('input',    runSearch);
 
 let _searchTimer = null;
 $("#searchInput").addEventListener('input', ()=>{
@@ -1407,48 +1428,72 @@ $("#searchInput").addEventListener('input', ()=>{
 
 function runSearch(){
   const q = $("#searchInput").value.trim();
-  const iso = $("#searchDate").value;
+  let from = $("#searchDateFrom").value;
+  let to   = $("#searchDateTo").value;
   const resultsEl = $("#searchResults");
   const summaryEl = $("#searchSummary");
 
-  if(!iso){
+  if(!from || !to){
     summaryEl.style.display = 'none';
-    resultsEl.innerHTML = `<div class="search-empty"><i class="bi bi-calendar3"></i> Elige un día para filtrar.</div>`;
+    resultsEl.innerHTML = `<div class="search-empty"><i class="bi bi-calendar3"></i> Elige el rango de días para filtrar (Desde / Hasta).</div>`;
     return;
   }
+  // Tolerate reversed input — interpret as a valid range either way.
+  if(from > to){ const tmp = from; from = to; to = tmp; }
+
   if(!q){
     summaryEl.style.display = 'none';
-    resultsEl.innerHTML = `<div class="search-empty"><i class="bi bi-funnel"></i> Escribe una palabra (cliente, hotel, habitación, comentario…) para filtrar los servicios del día.</div>`;
+    resultsEl.innerHTML = `<div class="search-empty"><i class="bi bi-funnel"></i> Escribe una palabra (cliente, hotel, habitación, comentario…) para filtrar los servicios.</div>`;
     return;
   }
 
   const tokens = normalize(q).split(/\s+/).filter(Boolean);
-  const d = state.days[iso];
-  const raw = (d && d.raw) || '';
-  const { lines } = parseDay(raw);
-  const matched = lines.filter(p => {
-    const hay = normalize([p.raw, p.hotel && p.hotel.name].filter(Boolean).join(' '));
-    return tokens.every(t => hay.includes(t));
-  });
+  const dates = Object.keys(state.days)
+    .filter(iso => iso >= from && iso <= to)
+    .sort();
 
-  if(matched.length === 0){
+  const groups = [];
+  let total = 0, count = 0, commCount = 0;
+  for(const iso of dates){
+    const d = state.days[iso];
+    if(!d || !d.raw) continue;
+    const { lines } = parseDay(d.raw);
+    const matched = lines.filter(p => {
+      const hay = normalize([p.raw, p.hotel && p.hotel.name].filter(Boolean).join(' '));
+      return tokens.every(t => hay.includes(t));
+    });
+    if(matched.length === 0) continue;
+    for(const p of matched){
+      count++;
+      if(p.commissionable && p.hotel){
+        const n = p.multiplier || 1;
+        total += COMMISSION_PER_SERVICE * n;
+        commCount += n;
+      }
+    }
+    groups.push({ iso, lines: matched });
+  }
+
+  const rangeLabel = (from === to)
+    ? formatDayTitle(from)
+    : `${formatDayTitle(from)} → ${formatDayTitle(to)}`;
+
+  if(groups.length === 0){
     summaryEl.style.display = 'none';
-    resultsEl.innerHTML = `<div class="search-empty">Sin coincidencias para "${escapeHtml(q)}" el ${formatDayTitle(iso)}.</div>`;
+    resultsEl.innerHTML = `<div class="search-empty">Sin coincidencias para "${escapeHtml(q)}" (${rangeLabel}).</div>`;
     return;
   }
 
-  let total = 0, commCount = 0;
-  for(const p of matched){
-    if(p.commissionable && p.hotel){
-      const n = p.multiplier || 1;
-      total += COMMISSION_PER_SERVICE * n;
-      commCount += n;
-    }
-  }
-
   summaryEl.style.display = '';
-  summaryEl.innerHTML = `${formatDayTitle(iso)} · ${matched.length} servicio${matched.length===1?'':'s'} · <strong>${commCount}</strong> comisionable${commCount===1?'':'s'} · <strong>${total}€</strong>`;
-  resultsEl.innerHTML = matched.map(p => renderLine(p, iso)).join('');
+  summaryEl.innerHTML = `${rangeLabel} · ${count} servicio${count===1?'':'s'} · <strong>${commCount}</strong> comisionable${commCount===1?'':'s'} · <strong>${total}€</strong>`;
+
+  // Show a date header per group only when the range spans more than 1 day.
+  const showDayHeaders = (from !== to) && groups.length > 1;
+  resultsEl.innerHTML = groups.map(g => {
+    const header = showDayHeaders ? `<div class="search-result-day">${formatDayTitle(g.iso)}</div>` : '';
+    const items = g.lines.map(p => renderLine(p, g.iso)).join('');
+    return header + items;
+  }).join('');
 }
 
 $("#searchResults").addEventListener('click', e=>{
