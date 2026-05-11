@@ -164,6 +164,10 @@
     background:#fff;
     border-left-color:#cbd5e1;
   }
+  .parsed-line.line-owner{
+    background:#fff7ed;
+    border-left-color:#f97316;
+  }
   .parsed-time{
     flex:0 0 52px;
     font-family:'Poppins', sans-serif;font-weight:700;
@@ -182,6 +186,7 @@
   .pill-comm{background: var(--color-terciary);color:#fff;}
   .pill-nocomm{background:#e5e7eb;color:#475569;}
   .pill-unknown{background:#e5e7eb;color:#475569;}
+  .pill-owner{background:#f97316;color:#fff;}
   .parsed-meta{
     color:#6b7280;font-size:.84rem;margin-top:.1rem;
   }
@@ -527,6 +532,16 @@ function escapeRegex(s){
    3'30 / 3:30 / 3.30 / 3h30 / 03:30 / 3 30 */
 /* Hora separators accepted: : ' ` ´ h . - ; (curly apostrophe U+2019) (curly U+2018) */
 const HORA_REGEX = /^\s*(\d{1,2})[\s:'`´h.\-;‘’]+(\d{2})\b/;
+
+/* Keywords that, when they appear as the last word of a line, mark the service
+   as "paid by the hotel owner" — line shown orange and excluded from totals. */
+const OWNER_KEYWORDS = new Set(["papa","alvaro"]);
+function endsWithOwnerKeyword(rawLine){
+  const m = rawLine.match(/(\S+)\s*$/);
+  if(!m) return false;
+  const last = normalize(m[1]).replace(/[^a-z0-9]/g,'');
+  return OWNER_KEYWORDS.has(last);
+}
 const NOTE_MARKER_REGEX = /[\u{1F6D1}\u{1F6A8}\u{26A0}\u{1F4CC}\u{1F4CD}❗‼\u{1F4E2}\u{1F535}\u{1F534}]/u;
 
 function parseHoraFromStart(line){
@@ -692,14 +707,20 @@ function parseLine(rawLine){
     if(n >= 2 && n <= 9) multiplier = n;
   }
 
+  // Owner pays the commission for the taxista directly: line excluded from
+  // total and shown in orange. Only relevant for would-be commissionable lines.
+  const paidByOwner = endsWithOwnerKeyword(rawLine);
+  const wouldComm = !!(hotelMatch && hotelMatch.hotel.commission);
+
   return {
     raw: rawLine,
     hora,
     hotel: hotelMatch ? hotelMatch.hotel : null,
     habitacion,
     comentario,
-    commissionable: !!(hotelMatch && hotelMatch.hotel.commission),
+    commissionable: wouldComm && !paidByOwner,
     recognized: !!hotelMatch,
+    paidByOwner,
     isNote: false,
     multiplier
   };
@@ -776,7 +797,10 @@ function renderLine(p){
     `;
   }
   let cls = 'line-unknown', pillCls = 'pill-unknown', pillText = 'No reconocido';
-  if(p.recognized && p.commissionable){
+  if(p.paidByOwner && p.recognized && p.hotel && p.hotel.commission){
+    cls = 'line-owner'; pillCls = 'pill-owner';
+    pillText = (p.multiplier || 1) > 1 ? `Paga él (x${p.multiplier})` : 'Paga él';
+  } else if(p.recognized && p.commissionable){
     const n = p.multiplier || 1;
     cls = 'line-comm'; pillCls = 'pill-comm';
     pillText = n > 1 ? `+${COMMISSION_PER_SERVICE * n}€ (x${n})` : `+${COMMISSION_PER_SERVICE}€`;
