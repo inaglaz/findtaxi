@@ -407,7 +407,7 @@ const HOTELS = [
   { id:"cool",         name:"Cool Sevilla",            commission:true,
     aliases:["cool sevilla","cool"] },
   { id:"buhaira",      name:"Sevilla Center Buhaira",  commission:true,
-    aliases:["sevilla center buhaira","buhaira"] },
+    aliases:["sevilla center buhaira","buhaira","buahira"] },
   { id:"viapol",       name:"Occidental Viapol",       commission:true,
     aliases:["occidental viapol","viapol"] },
   { id:"cse",          name:"CSE",                     commission:true,
@@ -428,7 +428,7 @@ const HOTELS = [
   { id:"nua-santacruz",name:"NÜA Santacruz",           commission:false,
     aliases:["nua santacruz","nua santa cruz","santacruz","santa cruz","s cruz","sta cruz"] },
   { id:"murillo",      name:"Hotel Murillo",           commission:false,
-    aliases:["suites murillo","murillo reinoso","murillo"] },
+    aliases:["suites murillo","s. murillo","s murillo","murillo reinoso","reinoso","suit","murillo"] },
   { id:"ribera",       name:"Ribera de Triana",        commission:false,
     aliases:["ribera de triana","ribera"] },
   { id:"alcantara",    name:"Alcántara",               commission:false,
@@ -462,12 +462,13 @@ let currentDate = isoDate(new Date());
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return { days: {}, dirty: {} };
+    if(!raw) return { days: {}, dirty: {}, scroll: {} };
     const s = JSON.parse(raw);
     if(!s.days) s.days = {};
     if(!s.dirty) s.dirty = {};
+    if(!s.scroll) s.scroll = {};
     return s;
-  }catch(e){ return { days: {}, dirty: {} }; }
+  }catch(e){ return { days: {}, dirty: {}, scroll: {} }; }
 }
 function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
@@ -524,7 +525,9 @@ function escapeRegex(s){
 
 /* Match hora at the start of a line. Accepts:
    3'30 / 3:30 / 3.30 / 3h30 / 03:30 / 3 30 */
-const HORA_REGEX = /^\s*(\d{1,2})[\s:'`´h.\-]+(\d{2})\b/;
+/* Hora separators accepted: : ' ` ´ h . - ; (curly apostrophe U+2019) (curly U+2018) */
+const HORA_REGEX = /^\s*(\d{1,2})[\s:'`´h.\-;‘’]+(\d{2})\b/;
+const NOTE_MARKER_REGEX = /[\u{1F6D1}\u{1F6A8}\u{26A0}\u{1F4CC}\u{1F4CD}❗‼\u{1F4E2}\u{1F535}\u{1F534}]/u;
 
 function parseHoraFromStart(line){
   const m = line.match(HORA_REGEX);
@@ -552,10 +555,18 @@ function findHotelInText(normText){
 function isHeaderLine(line){
   // Headers like "Sabado 09/05/26.-" — has a date pattern but no time
   if(/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(line)) return true;
-  // Day-of-week headers without time
+  if(HORA_REGEX.test(line)) return false;
   const norm = normalize(line);
+  // Day-of-week headers
   const days = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
-  if(days.some(d => norm.startsWith(d) && !HORA_REGEX.test(line))) return true;
+  if(days.some(d => norm.startsWith(d))) return true;
+  // "1 mayo" / "2 de mayo" / "10 Mayo" / "Mayo"
+  const months = '(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)';
+  if(new RegExp('^\\s*\\d{1,2}\\s+(?:de\\s+)?' + months + '\\b', 'i').test(norm)) return true;
+  if(new RegExp('^\\s*' + months + '\\s*\\d{2,4}\\s*$', 'i').test(norm)) return true;
+  // Single word "Debe" / "Debe:" — section header, but we still keep following
+  // lines (user wants Debe items treated like normal services).
+  if(/^debe\s*:?\s*$/i.test(norm)) return true;
   return false;
 }
 
@@ -577,21 +588,35 @@ function parseLine(rawLine){
   rest = stripOfficialPrefix(rest);
 
   const norm = normalize(rest);
+  const hasNoteMarker = NOTE_MARKER_REGEX.test(trimmed);
 
-  // Pure comment line (e.g. "Transfer") — ignored regardless of hora
-  const isCommentOnly = COMMENT_LINE_KEYWORDS.some(kw => {
+  // Pure comment line (e.g. "Transfer") — ignored regardless of hora,
+  // UNLESS it carries a note marker like 🛑 (then user wants to see it).
+  const isPureComment = COMMENT_LINE_KEYWORDS.some(kw => {
     const re = new RegExp('^' + escapeRegex(kw) + '\\b', 'i');
     return re.test(norm.trim());
   }) && !findHotelInText(norm);
-  if(isCommentOnly) return null;
+  if(isPureComment && !hasNoteMarker) return null;
 
   if(!hora && !rest) return null;
 
   const hotelMatch = findHotelInText(norm);
 
-  // If there's no hora and no recognizable hotel, skip silently (avoids
-  // turning random scribbles into amber lines).
-  if(!hora && !hotelMatch) return null;
+  // Notes: lines decorated with 🛑/⚠️/etc., OR lines with no hora and no hotel
+  // (intra-day reminders like "CAJAS DEL AIRE", "recogida arriba Goya 45 €").
+  // Shown as gray informational rows; do not count for commissions.
+  if(hasNoteMarker || (!hora && !hotelMatch)){
+    return {
+      raw: rawLine, hora,
+      hotel: null,
+      habitacion: '',
+      comentario: rest || trimmed,
+      commissionable: false,
+      recognized: false,
+      isNote: true,
+      multiplier: 1
+    };
+  }
 
   // Build the "remainder" after removing the hotel alias (using normalized text
   // positions to also drop the alias from the original `rest`).
@@ -659,6 +684,14 @@ function parseLine(rawLine){
   }
   comentario = comentario.replace(/[.,;]+$/,'').trim();
 
+  // "N taxis" / "N taxif" multiplier — same hotel, N services charged.
+  let multiplier = 1;
+  const multM = norm.match(/(\d+)\s*tax[ií]?[sf]?\b/);
+  if(multM){
+    const n = parseInt(multM[1], 10);
+    if(n >= 2 && n <= 9) multiplier = n;
+  }
+
   return {
     raw: rawLine,
     hora,
@@ -666,7 +699,9 @@ function parseLine(rawLine){
     habitacion,
     comentario,
     commissionable: !!(hotelMatch && hotelMatch.hotel.commission),
-    recognized: !!hotelMatch
+    recognized: !!hotelMatch,
+    isNote: false,
+    multiplier
   };
 }
 
@@ -681,12 +716,13 @@ function parseDay(rawText){
     if(!p) continue;
     parsed.push(p);
     if(p.commissionable && p.hotel){
-      total += COMMISSION_PER_SERVICE;
-      commCount++;
+      const n = p.multiplier || 1;
+      total += COMMISSION_PER_SERVICE * n;
+      commCount += n;
       const k = p.hotel.id;
       if(!breakdown[k]) breakdown[k] = { name: p.hotel.name, count:0, total:0 };
-      breakdown[k].count++;
-      breakdown[k].total += COMMISSION_PER_SERVICE;
+      breakdown[k].count += n;
+      breakdown[k].total += COMMISSION_PER_SERVICE * n;
     }
   }
   return { lines: parsed, total, breakdown, commCount };
@@ -725,11 +761,28 @@ function renderParsed(){
 }
 
 function renderLine(p){
+  // Note line: shown gray with the raw text as body, no hotel/habitación.
+  if(p.isNote){
+    return `
+      <div class="parsed-line line-known">
+        <div class="parsed-time ${p.hora ? '' : 'muted'}">${p.hora || '·'}</div>
+        <div class="parsed-body">
+          <div class="parsed-hotel">
+            <span style="font-weight:500;color:#475569;">${escapeHtml(p.comentario || p.raw)}</span>
+            <span class="pill pill-nocomm">Nota</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
   let cls = 'line-unknown', pillCls = 'pill-unknown', pillText = 'No reconocido';
   if(p.recognized && p.commissionable){
-    cls = 'line-comm'; pillCls = 'pill-comm'; pillText = `+${COMMISSION_PER_SERVICE}€`;
+    const n = p.multiplier || 1;
+    cls = 'line-comm'; pillCls = 'pill-comm';
+    pillText = n > 1 ? `+${COMMISSION_PER_SERVICE * n}€ (x${n})` : `+${COMMISSION_PER_SERVICE}€`;
   } else if(p.recognized){
-    cls = 'line-known'; pillCls = 'pill-nocomm'; pillText = 'No comisiona';
+    cls = 'line-known'; pillCls = 'pill-nocomm';
+    pillText = (p.multiplier || 1) > 1 ? `No comisiona (x${p.multiplier})` : 'No comisiona';
   }
   const hotelName = p.hotel ? p.hotel.name : (p.raw.replace(/^[\s\d:'`´h.\-]+/, '').split(/\s+/).slice(0,3).join(' ') || '—');
   const meta = p.habitacion ? `Hab. <span class="room">${escapeHtml(p.habitacion)}</span>` : '';
@@ -997,15 +1050,49 @@ window.addEventListener('scroll', closeAcPopup, true);
 window.addEventListener('resize', closeAcPopup);
 
 
-$("#prevDayBtn").addEventListener('click', ()=>{ currentDate = shiftDay(currentDate,-1); renderDay(); });
-$("#nextDayBtn").addEventListener('click', ()=>{ currentDate = shiftDay(currentDate, 1); renderDay(); });
-$("#todayBtn").addEventListener('click', ()=>{ currentDate = isoDate(new Date()); renderDay(); });
+/* Scroll memory per day. Resumed sessions stay where the user left them,
+   but switching day always starts at the top. */
+let _scrollTimer = null;
+window.addEventListener('scroll', () => {
+  if(_scrollTimer) clearTimeout(_scrollTimer);
+  _scrollTimer = setTimeout(() => {
+    state.scroll = state.scroll || {};
+    state.scroll[currentDate] = window.scrollY;
+    saveState();
+  }, 250);
+}, { passive: true });
+
+function restoreScrollForCurrentDay(){
+  const y = state.scroll && state.scroll[currentDate];
+  if(typeof y === 'number' && y > 0){
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  }
+}
+
+function navigateToDay(iso){
+  currentDate = iso;
+  state.scroll = state.scroll || {};
+  state.scroll[currentDate] = 0;
+  saveState();
+  renderDay();
+  window.scrollTo(0, 0);
+}
+
+$("#prevDayBtn").addEventListener('click', ()=>{ navigateToDay(shiftDay(currentDate,-1)); });
+$("#nextDayBtn").addEventListener('click', ()=>{ navigateToDay(shiftDay(currentDate, 1)); });
+$("#todayBtn").addEventListener('click',   ()=>{ navigateToDay(isoDate(new Date())); });
 
 document.addEventListener('keydown', e=>{
   if(['INPUT','TEXTAREA'].includes(document.activeElement?.tagName)) return;
-  if(e.key === 'ArrowRight'){ currentDate = shiftDay(currentDate, 1); renderDay(); }
-  if(e.key === 'ArrowLeft'){ currentDate = shiftDay(currentDate,-1); renderDay(); }
+  if(e.key === 'ArrowRight'){ navigateToDay(shiftDay(currentDate, 1)); }
+  if(e.key === 'ArrowLeft'){  navigateToDay(shiftDay(currentDate,-1)); }
 });
+
+/* Re-apply scroll when iOS Safari restores the page after backgrounding. */
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden) restoreScrollForCurrentDay();
+});
+window.addEventListener('pageshow', () => restoreScrollForCurrentDay());
 
 /* Previous month modal */
 let _prevMonthModal = null;
@@ -1231,8 +1318,15 @@ document.addEventListener('visibilitychange', ()=>{
 try{
   ensureDay(currentDate);
   renderDay();
+  // Restore scroll right away based on localStorage (in case the server pull
+  // takes a moment; we'll re-apply once the pull finishes to be safe).
+  restoreScrollForCurrentDay();
   scheduleMidnightRefresh();
-  pullFromServer();
+  pullFromServer().then(() => {
+    // After server data merges in, the textarea height may have grown — apply
+    // saved scroll again so the user lands where they left off.
+    restoreScrollForCurrentDay();
+  });
 }catch(err){
   console.error('Init error:', err);
 }
