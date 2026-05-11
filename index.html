@@ -128,7 +128,8 @@
     padding:.75rem .9rem;
     font-family:'DM Sans', system-ui, sans-serif;
     font-size:1rem;line-height:1.5;
-    resize:vertical;
+    resize:none;
+    overflow:hidden;
     outline:none;
     background:#fbfbfd;
     color:#1f2937;
@@ -748,10 +749,17 @@ function renderLine(p){
   `;
 }
 
+function autoGrowTextarea(){
+  // Grow with content; the CSS min-height keeps the baseline when empty.
+  dayText.style.height = 'auto';
+  dayText.style.height = dayText.scrollHeight + 'px';
+}
+
 function renderDay(){
   const day = ensureDay(currentDate);
   $("#dayTitle").textContent = formatDayTitle(currentDate);
   if(dayText.value !== day.raw) dayText.value = day.raw;
+  autoGrowTextarea();
   renderParsed();
 }
 
@@ -966,6 +974,7 @@ dayText.addEventListener('input', ()=>{
   day.raw = dayText.value;
   saveState();
   markDirty(currentDate);
+  autoGrowTextarea();
   if(_renderTimer) clearTimeout(_renderTimer);
   _renderTimer = setTimeout(renderParsed, 80);
   maybeShowAc();
