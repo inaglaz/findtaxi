@@ -355,8 +355,8 @@
         <li class="list-group-item text-muted">Sin servicios comisionables todavía.</li>
       </ul>
       <div class="d-flex flex-wrap gap-2 mt-3">
-        <button class="btn btn-outline-primary btn-sm" id="prevMonthBtn" style="display:none;">
-          <i class="bi bi-clock-history"></i> Ver mes anterior
+        <button class="btn btn-outline-danger btn-sm" id="deleteMonthBtn">
+          <i class="bi bi-trash3"></i> Eliminar este mes
         </button>
       </div>
     </div>
@@ -405,25 +405,6 @@
 
   <div id="syncStatus" class="sync-status small text-muted mb-3">
     <i class="bi bi-cloud"></i> <span>Inicializando…</span>
-  </div>
-
-  <!-- PREVIOUS MONTH MODAL -->
-  <div class="modal fade" id="prevMonthModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-scrollable">
-      <div class="modal-content" style="border-radius:18px;border:0;">
-        <div class="modal-header">
-          <h5 class="modal-title"><i class="bi bi-clock-history text-primary"></i> Mes anterior</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body" id="prevMonthBody"></div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cerrar</button>
-          <button type="button" class="btn btn-danger" id="deletePrevMonthBtn">
-            <i class="bi bi-trash3"></i> ELIMINAR
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 
 </main>
@@ -1008,13 +989,10 @@ function renderMonthSummary(){
     `).join('');
   }
 
-  const pmk = prevMonthKey(mk);
-  const btn = $("#prevMonthBtn");
-  if(monthHasData(pmk)){
-    btn.style.display = "inline-flex";
-    btn.dataset.month = pmk;
-  } else {
-    btn.style.display = "none";
+  const delBtn = $("#deleteMonthBtn");
+  if(delBtn){
+    delBtn.dataset.month = mk;
+    delBtn.disabled = !monthHasData(mk);
   }
 }
 
@@ -1336,20 +1314,6 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pageshow', () => restoreScrollForCurrentDay());
 
-/* Previous month modal */
-let _prevMonthModal = null;
-function getPrevMonthModal(){
-  if(_prevMonthModal) return _prevMonthModal;
-  if(typeof bootstrap === 'undefined' || !bootstrap.Modal) return null;
-  _prevMonthModal = new bootstrap.Modal($("#prevMonthModal"));
-  return _prevMonthModal;
-}
-$("#prevMonthBtn").addEventListener('click', ()=>{
-  const pmk = $("#prevMonthBtn").dataset.month;
-  if(!pmk) return;
-  showPrevMonth(pmk);
-});
-
 function computeDayTotal(iso){
   const d = state.days[iso];
   if(!d || !d.raw) return { total:0, count:0 };
@@ -1357,68 +1321,18 @@ function computeDayTotal(iso){
   return { total, count: lines.length };
 }
 
-function showPrevMonth(mk){
-  const { breakdown, total } = computeMonthBreakdown(mk);
-  const keys = Object.keys(breakdown).sort((a,b)=> breakdown[b].total - breakdown[a].total);
-  const days = Object.keys(state.days)
-    .filter(iso => monthKey(iso) === mk)
-    .sort();
-
-  let html = `
-    <div class="text-center mb-3">
-      <div class="text-muted small">${monthLabel(mk)}</div>
-      <div class="display-6 text-primary fw-bold">${total}€</div>
-      <div class="text-muted small">Total comisiones del mes</div>
-    </div>
-  `;
-  if(keys.length){
-    html += `<h6 class="text-uppercase text-muted small mt-3">Por hotel</h6>
-      <ul class="list-group list-group-flush mb-3">`;
-    keys.forEach(k=>{
-      html += `
-        <li class="list-group-item d-flex justify-content-between">
-          <div><span class="fw-semibold">${escapeHtml(breakdown[k].name)}</span>
-          <span class="text-muted small ms-2">${breakdown[k].count} servicio${breakdown[k].count===1?'':'s'}</span></div>
-          <div class="fw-bold text-primary">${breakdown[k].total}€</div>
-        </li>`;
-    });
-    html += `</ul>`;
-  }
-  html += `<h6 class="text-uppercase text-muted small mt-3">Días con servicios</h6>
-    <ul class="list-group list-group-flush">`;
-  let any = false;
-  days.forEach(iso=>{
-    const { total: t, count } = computeDayTotal(iso);
-    if(count === 0 && t === 0) return;
-    any = true;
-    html += `<li class="list-group-item d-flex justify-content-between">
-      <span>${formatDayTitle(iso)}</span>
-      <span><span class="text-muted small me-2">${count} serv.</span><span class="fw-bold text-terciary">${t}€</span></span>
-    </li>`;
-  });
-  if(!any) html += `<li class="list-group-item text-muted">Sin actividad registrada.</li>`;
-  html += `</ul>`;
-
-  $("#prevMonthBody").innerHTML = html;
-  $("#deletePrevMonthBtn").dataset.month = mk;
-  const m = getPrevMonthModal();
-  if(m) m.show();
-  else $("#prevMonthModal").style.display = "block";
-}
-
-$("#deletePrevMonthBtn").addEventListener('click', async ()=>{
-  const mk = $("#deletePrevMonthBtn").dataset.month;
-  if(!mk) return;
+$("#deleteMonthBtn").addEventListener('click', async ()=>{
+  const mk = $("#deleteMonthBtn").dataset.month || monthKey(currentDate);
+  if(!monthHasData(mk)) return;
   if(!confirm(`¿ELIMINAR todos los datos de ${monthLabel(mk)}? Esta acción no se puede deshacer.`)) return;
   Object.keys(state.days).forEach(iso=>{
     if(monthKey(iso) === mk){
       delete state.days[iso];
       if(state.dirty) delete state.dirty[iso];
+      if(state.paid) delete state.paid[iso];
     }
   });
   saveState();
-  const m = getPrevMonthModal();
-  if(m) m.hide();
   renderDay();
   try{
     setSyncStatus('syncing','Eliminando…');
@@ -1522,12 +1436,12 @@ async function pullFromServer(){
   try{
     setSyncStatus('syncing', 'Cargando…');
     const today = new Date();
-    const curMK = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-    const prevMK = prevMonthKey(curMK);
-    const from = `${prevMK}-01`;
-    const [y, m] = curMK.split('-').map(Number);
-    const lastDay = new Date(y, m, 0).getDate();
-    const to = `${curMK}-${String(lastDay).padStart(2,'0')}`;
+    // Pull a wide historical window so navegar a meses antiguos en otro
+    // dispositivo siempre muestra los datos. El volumen es minúsculo
+    // (≤ 1 fila/día) — no merece la pena paginar.
+    const from = '2020-01-01';
+    const toDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    const to = isoDate(toDate);
     const data = await apiFetch(`/api/services?from=${from}&to=${to}`);
     const dirty = state.dirty || {};
     const serverDays = data.days || {};
