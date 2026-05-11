@@ -320,18 +320,9 @@
   .ac-hint.is-visible{display:block;}
 
   /* SEARCH */
-  .search-scope{
-    display:flex;gap:.4rem;flex-wrap:wrap;
-  }
-  .scope-chip{
-    border:1px solid #e5e7eb;background:#fff;color:#475569;
-    padding:.4rem .85rem;border-radius:999px;
-    font-size:.85rem;font-weight:600;cursor:pointer;
-    transition: background .15s ease, color .15s ease, border-color .15s ease;
-  }
-  .scope-chip:hover{background:#f8fafc;}
-  .scope-chip.active{
-    background: var(--bs-primary);color:#fff;border-color: var(--bs-primary);
+  .search-field-label{
+    display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;
+    color:#6b7280;font-weight:600;margin-bottom:.35rem;
   }
   .search-input{
     width:100%;
@@ -455,13 +446,11 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
         </div>
         <div class="modal-body">
-          <div class="search-scope mb-3" id="searchScope">
-            <button type="button" class="scope-chip active" data-scope="day">Este día</button>
-            <button type="button" class="scope-chip" data-scope="month">Este mes</button>
-            <button type="button" class="scope-chip" data-scope="all">Todos</button>
-          </div>
+          <label class="search-field-label" for="searchDate">Día</label>
+          <input type="date" id="searchDate" class="search-input mb-3">
+          <label class="search-field-label" for="searchInput">Palabra clave</label>
           <input type="search" id="searchInput" class="search-input"
-            placeholder="Palabra clave: negro, indias, 401…"
+            placeholder="Ej: negro, indias, 401…"
             autocomplete="off" spellcheck="false" inputmode="search">
           <div class="search-summary mt-3" id="searchSummary" style="display:none;"></div>
           <div id="searchResults" class="mt-2"></div>
@@ -1390,7 +1379,6 @@ function computeDayTotal(iso){
 }
 
 /* ====================== SEARCH ====================== */
-let searchScope = 'day';
 let _searchModal = null;
 function getSearchModal(){
   if(_searchModal) return _searchModal;
@@ -1400,21 +1388,16 @@ function getSearchModal(){
 }
 
 $("#searchBtn").addEventListener('click', ()=>{
+  // Reset the date picker to the day the user is currently viewing.
+  $("#searchDate").value = currentDate;
   const m = getSearchModal();
   if(m) m.show();
   setTimeout(()=> $("#searchInput").focus(), 220);
-  // Re-run with whatever query/scope was last used
   runSearch();
 });
 
-$("#searchScope").addEventListener('click', e=>{
-  const chip = e.target.closest('.scope-chip');
-  if(!chip) return;
-  document.querySelectorAll('#searchScope .scope-chip').forEach(c => c.classList.remove('active'));
-  chip.classList.add('active');
-  searchScope = chip.dataset.scope || 'day';
-  runSearch();
-});
+$("#searchDate").addEventListener('change', runSearch);
+$("#searchDate").addEventListener('input', runSearch);
 
 let _searchTimer = null;
 $("#searchInput").addEventListener('input', ()=>{
@@ -1424,64 +1407,48 @@ $("#searchInput").addEventListener('input', ()=>{
 
 function runSearch(){
   const q = $("#searchInput").value.trim();
-  const resultsEl  = $("#searchResults");
-  const summaryEl  = $("#searchSummary");
+  const iso = $("#searchDate").value;
+  const resultsEl = $("#searchResults");
+  const summaryEl = $("#searchSummary");
+
+  if(!iso){
+    summaryEl.style.display = 'none';
+    resultsEl.innerHTML = `<div class="search-empty"><i class="bi bi-calendar3"></i> Elige un día para filtrar.</div>`;
+    return;
+  }
   if(!q){
     summaryEl.style.display = 'none';
-    resultsEl.innerHTML = `<div class="search-empty"><i class="bi bi-funnel"></i> Escribe una palabra (cliente, hotel, habitación, comentario…) para filtrar los servicios.</div>`;
+    resultsEl.innerHTML = `<div class="search-empty"><i class="bi bi-funnel"></i> Escribe una palabra (cliente, hotel, habitación, comentario…) para filtrar los servicios del día.</div>`;
     return;
   }
+
   const tokens = normalize(q).split(/\s+/).filter(Boolean);
+  const d = state.days[iso];
+  const raw = (d && d.raw) || '';
+  const { lines } = parseDay(raw);
+  const matched = lines.filter(p => {
+    const hay = normalize([p.raw, p.hotel && p.hotel.name].filter(Boolean).join(' '));
+    return tokens.every(t => hay.includes(t));
+  });
 
-  let dates;
-  if(searchScope === 'day'){
-    dates = [currentDate];
-  } else if(searchScope === 'month'){
-    const mk = monthKey(currentDate);
-    dates = Object.keys(state.days).filter(iso => monthKey(iso) === mk);
-  } else {
-    dates = Object.keys(state.days);
-  }
-  dates.sort();
-
-  const groups = [];
-  let total = 0, count = 0, commCount = 0;
-  for(const iso of dates){
-    const d = state.days[iso];
-    if(!d || !d.raw) continue;
-    const { lines } = parseDay(d.raw);
-    const matched = lines.filter(p => {
-      const hay = normalize([p.raw, p.hotel && p.hotel.name].filter(Boolean).join(' '));
-      return tokens.every(t => hay.includes(t));
-    });
-    if(matched.length === 0) continue;
-    let dayTotal = 0;
-    for(const p of matched){
-      count++;
-      if(p.commissionable && p.hotel){
-        const n = p.multiplier || 1;
-        dayTotal += COMMISSION_PER_SERVICE * n;
-        commCount += n;
-      }
-    }
-    total += dayTotal;
-    groups.push({ iso, lines: matched, dayTotal });
-  }
-
-  if(groups.length === 0){
+  if(matched.length === 0){
     summaryEl.style.display = 'none';
-    resultsEl.innerHTML = `<div class="search-empty">Sin coincidencias para "${escapeHtml(q)}".</div>`;
+    resultsEl.innerHTML = `<div class="search-empty">Sin coincidencias para "${escapeHtml(q)}" el ${formatDayTitle(iso)}.</div>`;
     return;
   }
-  summaryEl.style.display = '';
-  summaryEl.innerHTML = `${count} servicio${count===1?'':'s'} encontrado${count===1?'':'s'} · <strong>${commCount}</strong> comisionable${commCount===1?'':'s'} · <strong>${total}€</strong>`;
 
-  const showDayHeaders = searchScope !== 'day';
-  resultsEl.innerHTML = groups.map(g => {
-    const header = showDayHeaders ? `<div class="search-result-day">${formatDayTitle(g.iso)}</div>` : '';
-    const items = g.lines.map(p => renderLine(p, g.iso)).join('');
-    return header + items;
-  }).join('');
+  let total = 0, commCount = 0;
+  for(const p of matched){
+    if(p.commissionable && p.hotel){
+      const n = p.multiplier || 1;
+      total += COMMISSION_PER_SERVICE * n;
+      commCount += n;
+    }
+  }
+
+  summaryEl.style.display = '';
+  summaryEl.innerHTML = `${formatDayTitle(iso)} · ${matched.length} servicio${matched.length===1?'':'s'} · <strong>${commCount}</strong> comisionable${commCount===1?'':'s'} · <strong>${total}€</strong>`;
+  resultsEl.innerHTML = matched.map(p => renderLine(p, iso)).join('');
 }
 
 $("#searchResults").addEventListener('click', e=>{
