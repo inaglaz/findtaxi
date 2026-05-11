@@ -161,6 +161,9 @@
     background:rgba(20,184,166,.08);
     border-left-color: var(--color-terciary);
   }
+  .parsed-line.line-comm-paid{
+    background:rgba(20,184,166,.28);
+  }
   .parsed-line.line-known{
     background:#fff;
     border-left-color:#cbd5e1;
@@ -199,6 +202,34 @@
   .parsed-comment{
     color:#9ca3af;font-size:.8rem;font-style:italic;margin-top:.05rem;
   }
+  .parsed-actions{
+    display:flex;align-items:center;gap:.3rem;
+    flex:0 0 auto;margin-left:.4rem;
+  }
+  .btn-pay{
+    border:1px solid var(--color-terciary);background:#fff;
+    color:#0f766e;font-size:.74rem;font-weight:700;
+    padding:.22rem .55rem;border-radius:8px;cursor:pointer;
+    text-transform:uppercase;letter-spacing:.04em;
+    transition: background .15s ease;
+  }
+  .btn-pay:hover{background:rgba(20,184,166,.12);}
+  .btn-pay:active{transform:scale(.96);}
+  .btn-pay-done{
+    font-size:.74rem;font-weight:700;color:#fff;
+    background:var(--color-terciary);
+    padding:.22rem .55rem;border-radius:8px;
+    text-transform:uppercase;letter-spacing:.04em;
+    cursor:default;user-select:none;
+  }
+  .btn-pay-undo{
+    border:1px solid #fecaca;background:#fff;
+    color:#dc2626;font-size:.95rem;line-height:1;font-weight:700;
+    width:26px;height:26px;border-radius:50%;
+    display:inline-flex;align-items:center;justify-content:center;
+    cursor:pointer;padding:0;
+  }
+  .btn-pay-undo:hover{background:#fee2e2;}
   .parsed-summary{
     display:flex;align-items:center;justify-content:space-between;
     padding:.5rem .85rem;background:#f8fafc;border-radius:10px;
@@ -425,8 +456,6 @@ const HOTELS = [
     aliases:["halo boutique","halo"] },
   { id:"giralda",      name:"Giralda Center",          commission:true,
     aliases:["giralda center","giralda"] },
-  { id:"gotoseville",  name:"Go To Seville",           commission:true,
-    aliases:["go to seville","gotoseville"] },
   { id:"only",         name:"Only YOU",                commission:true,
     aliases:["only you","only"] },
   { id:"puerta",       name:"La Puerta de Palacio",    commission:true,
@@ -442,10 +471,20 @@ const HOTELS = [
   { id:"kube",         name:"Kube",                    commission:true,
     aliases:["kube"] },
   { id:"room",         name:"Room",                    commission:true,
-    aliases:["room salvador","room"] },
+    aliases:["room salvador","room jovellanos","room","jovellanos","salvador"] },
   // --- No comisionables ---
   { id:"casa1800",     name:"Casa 1800",               commission:false,
     aliases:["casa 1800","1800"] },
+  { id:"unuk",         name:"Unuk",                    commission:false,
+    aliases:["unuk"] },
+  { id:"abanico",      name:"Abanico",                 commission:false,
+    aliases:["abanico"] },
+  { id:"alfaro",       name:"Alfaro",                  commission:false,
+    aliases:["alfaro"] },
+  { id:"sangil",       name:"San Gil",                 commission:false,
+    aliases:["san gil","sangil","gil"] },
+  { id:"goto",         name:"Go To Seville",           commission:false,
+    aliases:["go to seville","go to sevilla","goto seville","gotoseville","go to","goto"] },
   { id:"nua-giralda",  name:"NÜA Giralda",             commission:false,
     aliases:["nua giralda","abadia"] },
   { id:"nua-santiago", name:"NÜA Santiago 15",         commission:false,
@@ -474,6 +513,17 @@ const COMMENT_TOKEN_KEYWORDS = [
   "bicis","bici","arto","jerez","aeropuerto","santa justa","s justa","s. justa"
 ];
 
+/* Keywords that force a line to NOT commission, even if the hotel normally does.
+   Typically place names (estaciones/zonas) where el taxista no cobra comisión. */
+const NO_COMMISSION_KEYWORDS = ["armas","justa","urbano"];
+function hasNoCommissionKeyword(normText){
+  for(const kw of NO_COMMISSION_KEYWORDS){
+    const re = new RegExp('(^|[^a-z0-9])' + escapeRegex(kw) + '([^a-z0-9]|$)', 'i');
+    if(re.test(normText)) return true;
+  }
+  return false;
+}
+
 /* Pre-computed: every (alias, hotel) pair sorted longest alias first. */
 const HOTEL_ALIASES = (() => {
   const arr = [];
@@ -489,13 +539,14 @@ let currentDate = isoDate(new Date());
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return { days: {}, dirty: {}, scroll: {} };
+    if(!raw) return { days: {}, dirty: {}, scroll: {}, paid: {} };
     const s = JSON.parse(raw);
     if(!s.days) s.days = {};
     if(!s.dirty) s.dirty = {};
     if(!s.scroll) s.scroll = {};
+    if(!s.paid) s.paid = {};
     return s;
-  }catch(e){ return { days: {}, dirty: {}, scroll: {} }; }
+  }catch(e){ return { days: {}, dirty: {}, scroll: {}, paid: {} }; }
 }
 function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
@@ -552,8 +603,11 @@ function escapeRegex(s){
 
 /* Match hora at the start of a line. Accepts:
    3'30 / 3:30 / 3.30 / 3h30 / 03:30 / 3 30 */
-/* Hora separators accepted: : ' ` ´ h . - ; (curly apostrophe U+2019) (curly U+2018) */
-const HORA_REGEX = /^\s*(\d{1,2})[\s:'`´h.\-;‘’]+(\d{2})\b/;
+/* Hora separators accepted: any non-alphanumeric char (covers : ' ` ´ . , - ;
+   plus typographic variants U+2018 ‘, U+2019 ’, U+02BC ʼ, U+2032 ′, U+00B4 ´),
+   plus the letter h/H as in "4h30". The negative lookahead guards against a
+   third digit attaching (so "401" alone is not parsed as "4:01"). */
+const HORA_REGEX = /^\s*(\d{1,2})(?:[^0-9A-Za-zÀ-ÿ]|[hH])+(\d{2})(?![0-9])/;
 
 /* Keywords that, when they appear as the last word of a line, mark the service
    as "paid by the hotel owner" — line shown orange and excluded from totals. */
@@ -732,7 +786,8 @@ function parseLine(rawLine){
   // Owner pays the commission for the taxista directly: line excluded from
   // total and shown in orange. Only relevant for would-be commissionable lines.
   const paidByOwner = endsWithOwnerKeyword(rawLine);
-  const wouldComm = !!(hotelMatch && hotelMatch.hotel.commission);
+  const blockedByKeyword = hasNoCommissionKeyword(norm);
+  const wouldComm = !!(hotelMatch && hotelMatch.hotel.commission) && !blockedByKeyword;
 
   return {
     raw: rawLine,
@@ -781,6 +836,27 @@ const parsedSummary = $("#parsedSummary");
 function escapeHtml(s){
   return String(s||"").replace(/[&<>"']/g,
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* Stable signature for "paid" state: normalized trimmed raw line.
+   If the line content changes the paid state effectively resets, which is the
+   intended behavior (a different service can't inherit the paid mark). */
+function paidSig(p){
+  return normalize(String(p && p.raw || '').trim()).replace(/\s+/g,' ');
+}
+function isLinePaid(iso, p){
+  return !!(state.paid && state.paid[iso] && state.paid[iso][paidSig(p)]);
+}
+function setLinePaid(iso, sig, value){
+  state.paid = state.paid || {};
+  if(value){
+    if(!state.paid[iso]) state.paid[iso] = {};
+    state.paid[iso][sig] = true;
+  } else if(state.paid[iso]){
+    delete state.paid[iso][sig];
+    if(Object.keys(state.paid[iso]).length === 0) delete state.paid[iso];
+  }
+  saveState();
 }
 
 function renderParsed(){
@@ -839,8 +915,27 @@ function renderLine(p){
                  : cls === 'line-owner'   ? 'lh-owner'
                  : cls === 'line-unknown' ? 'lh-unknown'
                  : 'lh-known';
+
+  let actions = '';
+  let extraCls = '';
+  if(cls === 'line-comm'){
+    const sig = paidSig(p);
+    const paid = isLinePaid(currentDate, p);
+    if(paid){
+      extraCls = ' line-comm-paid';
+      actions = `<div class="parsed-actions">
+        <span class="btn-pay-done">Pagado</span>
+        <button type="button" class="btn-pay-undo" data-pay-undo="${escapeHtml(sig)}" aria-label="Revocar pago" title="Revocar pago">×</button>
+      </div>`;
+    } else {
+      actions = `<div class="parsed-actions">
+        <button type="button" class="btn-pay" data-pay="${escapeHtml(sig)}">Pagado</button>
+      </div>`;
+    }
+  }
+
   return `
-    <div class="parsed-line ${cls}" data-line-idx="${lineIdx}" data-flash="${flashTag}">
+    <div class="parsed-line ${cls}${extraCls}" data-line-idx="${lineIdx}" data-flash="${flashTag}">
       <div class="parsed-time ${p.hora ? '' : 'muted'}">${p.hora || '--:--'}</div>
       <div class="parsed-body">
         <div class="parsed-hotel">
@@ -850,6 +945,7 @@ function renderLine(p){
         ${meta ? `<div class="parsed-meta">${meta}</div>` : ''}
         ${com ? `<div class="parsed-comment">${com}</div>` : ''}
       </div>
+      ${actions}
     </div>
   `;
 }
@@ -1174,6 +1270,20 @@ function flashTextareaLine(lineIdx, flashTag){
 }
 
 parsedList.addEventListener('click', e => {
+  const payBtn = e.target.closest('[data-pay]');
+  if(payBtn){
+    e.stopPropagation();
+    setLinePaid(currentDate, payBtn.getAttribute('data-pay'), true);
+    renderParsed();
+    return;
+  }
+  const undoBtn = e.target.closest('[data-pay-undo]');
+  if(undoBtn){
+    e.stopPropagation();
+    setLinePaid(currentDate, undoBtn.getAttribute('data-pay-undo'), false);
+    renderParsed();
+    return;
+  }
   const row = e.target.closest('.parsed-line');
   if(!row) return;
   const idx = parseInt(row.dataset.lineIdx, 10);
